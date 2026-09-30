@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Subtitle workbench</title>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#EFF2F3;--panel:#FFFFFF;--ink:#16212B;--muted:#586874;--line:#D0D7DC;
+  --accent:#0F6E6E;--accent-ink:#FFFFFF;--warn:#A8231B;--warnbg:#FBE9E7;
+  --screen:#10161C;--sub:#F5C518;--field:#FFFFFF;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1318;--panel:#161D24;--ink:#E6ECF0;--muted:#93A3AF;--line:#2A3540;
+    --accent:#3FB7B0;--accent-ink:#06201F;--warn:#FF9C92;--warnbg:#3A1F1D;
+    --screen:#05080B;--field:#0F151B;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1318;--panel:#161D24;--ink:#E6ECF0;--muted:#93A3AF;--line:#2A3540;
+  --accent:#3FB7B0;--accent-ink:#06201F;--warn:#FF9C92;--warnbg:#3A1F1D;
+  --screen:#05080B;--field:#0F151B;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:16px 14px 64px}
+h1{font-size:1.5rem;line-height:1.2;margin:8px 0 2px;font-weight:700}
+h2{font-size:1.05rem;margin:0 0 8px;font-weight:700}
+.lede{margin:0 0 14px;color:var(--muted)}
+.mono,.tc,.ruler,.meta{font-family:"Spline Sans Mono",ui-monospace,Menlo,Consolas,monospace}
+
+/* screen */
+.screen{background:var(--screen);color:#fff;border-radius:14px;padding:14px 14px 10px}
+.preview{min-height:72px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:pre-wrap;color:var(--sub);font-size:1.25rem;font-weight:500;text-shadow:0 1px 2px #000;padding:4px 8px}
+.preview.empty{color:#8797A3;font-size:.95rem;font-weight:400;text-shadow:none}
+.timeline{position:relative;height:44px;background:#1B2630;border-radius:6px;margin-top:8px;overflow:hidden}
+.blk{position:absolute;top:6px;bottom:6px;min-width:3px;border:0;padding:0;background:var(--sub);opacity:.85;border-radius:2px;cursor:pointer}
+.blk.bad{background:#FF6B5E;opacity:1}
+.blk.sel{outline:2px solid #fff;opacity:1;z-index:2}
+.ruler{position:relative;height:20px;margin-top:4px;font-size:11px;color:#8FA0AD}
+.ruler span{position:absolute;top:2px;transform:translateX(-50%)}
+.stats{font-size:.85rem;color:#B4C2CC;margin-top:2px}
+
+/* bar and tabs */
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.btn{font:inherit;font-weight:500;padding:.45rem .85rem;min-height:40px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--warn)}
+.btn.sm{min-height:32px;padding:.15rem .6rem;font-size:.85rem}
+.btn:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{font:inherit;font-weight:500;border:0;background:none;color:var(--muted);padding:.7rem 1rem;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.panel{padding-top:14px}
+
+/* cards and fields */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:end}
+label{display:flex;flex-direction:column;gap:4px;font-size:.88rem;color:var(--muted)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:6px;padding:.45rem .55rem;min-height:40px;width:100%}
+textarea{resize:vertical;line-height:1.4}
+input.invalid{border-color:var(--warn);background:var(--warnbg)}
+.tc{width:9.6rem;font-size:.9rem}
+.check{flex-direction:row;align-items:center;gap:8px;color:var(--ink)}
+.check input{width:auto;min-height:0}
+.note{font-size:.88rem;color:var(--muted);margin:6px 0 0}
+.line{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+progress{width:100%;height:10px;accent-color:var(--accent)}
+
+/* rows */
+.row{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;display:grid;grid-template-columns:2.2rem 1fr;gap:8px}
+.row.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.idx{font-family:"Spline Sans Mono",monospace;color:var(--muted);font-size:.85rem;padding-top:8px}
+.times{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+.dur{font-family:"Spline Sans Mono",monospace;font-size:.85rem;color:var(--muted)}
+.arrow{color:var(--muted);font-size:.85rem}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;min-height:0}
+.badge{font-size:.78rem;padding:1px 9px;border-radius:99px;background:var(--warnbg);color:var(--warn)}
+.badge.soft{background:var(--line);color:var(--muted)}
+.acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.trrow{grid-template-columns:2.2rem 1fr}
+.pair{display:grid;gap:10px;grid-template-columns:1fr}
+@media (min-width:760px){.pair{grid-template-columns:1fr 1fr}}
+.meta{font-size:.78rem;color:var(--muted);margin-bottom:4px}
+.srctext{white-space:pre-wrap;padding:.45rem .55rem;border-left:3px solid var(--line)}
+.colhead{display:none}
+@media (min-width:760px){.colhead{display:grid;grid-template-columns:2.2rem 1fr 1fr;gap:10px;padding:0 10px;font-weight:700;font-size:.88rem;color:var(--muted)}}
+.empty-state{padding:24px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:10px}
+.gl{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{display:inline-flex;gap:6px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:2px 4px 2px 10px;font-size:.88rem}
+.chip button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:1rem;line-height:1;padding:2px 6px}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:92%;background:var(--ink);color:var(--bg);padding:.6rem 1rem;border-radius:8px;font-size:.92rem;z-index:10}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Subtitle workbench</h1>
+  <p class="lede">Create, check and fix .srt files. Your work stays in this browser.</p>
+
+  <section class="screen" aria-label="Timeline">
+    <div class="preview empty" id="preview">Pick a cue to preview it here.</div>
+    <div class="timeline" id="timeline"></div>
+    <div class="ruler" id="ruler" aria-hidden="true"></div>
+    <div class="stats" id="stats"></div>
+  </section>
+
+  <div class="bar">
+    <button class="btn primary" id="openBtn">Open .srt</button>
+    <button class="btn" id="pasteBtn">Paste SRT text</button>
+    <button class="btn" id="undoBtn" disabled>Undo</button>
+    <button class="btn danger" id="clearBtn">Clear project</button>
+    <input type="file" id="openFile" accept=".srt,.vtt,.txt" hidden>
+  </div>
+
+  <section class="card" id="pasteBox" hidden>
+    <label>Paste the contents of an .srt file
+      <textarea id="pasteText" rows="7" placeholder="1&#10;00:00:01,000 --> 00:00:03,000&#10;Hello there."></textarea>
+    </label>
+    <div class="line">
+      <button class="btn primary" id="pasteLoad">Load cues</button>
+      <button class="btn" id="pasteClose">Cancel</button>
+    </div>
+  </section>
+
+  <section class="card" id="export" hidden>
+    <h2 id="exTitle">Export</h2>
+    <textarea id="exText" rows="9" readonly class="mono"></textarea>
+    <div class="line">
+      <button class="btn primary" id="exSave">Save file</button>
+      <button class="btn" id="exCopy">Copy text</button>
+      <button class="btn" id="exClose">Close</button>
+    </div>
+    <p class="note" id="exNote"></p>
+  </section>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="create" aria-selected="true">Create</button>
+    <button class="tab" role="tab" data-tab="edit" aria-selected="false">Edit and check</button>
+  </div>
+
+  <!-- CREATE -->
+  <div class="panel" data-panel="create">
+    <section class="card">
+      <h2>Type or paste lines</h2>
+      <label>One cue per line. Use | to break a line inside a cue.
+        <textarea id="qp" rows="6" placeholder="Good morning, everyone.&#10;Let's begin with the first item.|It won't take long."></textarea>
+      </label>
+      <div class="grid" style="margin-top:10px">
+        <label>First cue starts at
+          <input id="qpStart" class="tc" style="width:100%" placeholder="auto">
+        </label>
+        <label>Timing
+          <select id="qpMode"><option value="auto">From reading speed</option><option value="fixed">Fixed length</option></select>
+        </label>
+        <label>Reading speed (chars/s)
+          <input id="qpCps" type="number" min="5" max="30" step="1" value="15">
+        </label>
+        <label>Fixed length (seconds)
+          <input id="qpFixed" type="number" min="0.5" max="10" step="0.1" value="2.5">
+        </label>
+        <label>Gap between cues (ms)
+          <input id="qpGap" type="number" min="0" max="2000" step="10" value="100">
+        </label>
+      </div>
+      <div class="line"><button class="btn primary" id="qpAdd">Add cues</button></div>
+    </section>
+
+    <section class="card">
+      <h2>Add one cue</h2>
+      <div class="grid">
+        <label>Start<input id="addStart" class="tc" style="width:100%"></label>
+        <label>End<input id="addEnd" class="tc" style="width:100%"></label>
+      </div>
+      <label style="margin-top:10px">Text
+        <textarea id="addText" rows="2"></textarea>
+      </label>
+      <div class="line"><button class="btn primary" id="addOne">Add cue</button></div>
+    </section>
+
+    <div class="line"><button class="btn primary" data-export="text">Export .srt</button><button class="btn" data-goto="edit">Fine-tune in Edit and check</button></div>
+  </div>
+
+  <!-- EDIT -->
+  <div class="panel" data-panel="edit" hidden>
+    <section class="card">
+      <h2>Rules for checking</h2>
+      <div class="grid">
+        <label>Max characters per line<input id="cfgCpl" type="number" min="10" max="80" value="42"></label>
+        <label>Max lines per cue<input id="cfgLines" type="number" min="1" max="4" value="2"></label>
+        <label>Max chars per second<input id="cfgCps" type="number" min="5" max="40" value="17"></label>
+        <label>Min length (s)<input id="cfgMin" type="number" min="0.1" max="5" step="0.1" value="1"></label>
+        <label>Max length (s)<input id="cfgMax" type="number" min="2" max="20" step="0.5" value="7"></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Bulk fixes</h2>
+      <div class="grid">
+        <label>Shift by (seconds, can be negative)<input id="shiftBy" type="number" step="0.1" value="0"></label>
+        <label>Apply to
+          <select id="shiftScope"><option value="all">All cues</option><option value="from">Selected cue and later</option></select>
+        </label>
+        <button class="btn" id="shiftGo">Shift timing</button>
+      </div>
+      <div class="line">
+        <button class="btn" id="fixOverlap">Fix overlaps</button>
+        <button class="btn" id="sortCues">Sort by start time</button>
+        <button class="btn" id="wrapSrc">Rewrap long lines</button>
+      </div>
+      <p class="note">Fix overlaps trims a cue's end to just before the next start.</p>
+    </section>
+
+    <div class="line" style="margin:0 0 6px">
+      <label class="check"><input type="checkbox" id="onlyIssues"> Show only cues with problems</label>
+      <button class="btn primary sm" data-export="text">Export .srt</button>
+    </div>
+    <div id="editList"></div>
+  </div>
+
+</div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function(){
+'use strict';
+var $=function(s,r){return (r||document).querySelector(s)};
+var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+var uid=1;
+var STORE='subtitleWorkbench.v1';
+var state={cues:[],glossary:[],srcLang:'Source',tgtLang:'Target',tab:'create',sel:null,
+  cfg:{cpl:42,lines:2,cps:17,minDur:1000,maxDur:7000}};
+var undoStack=[];
+var editRefs=new Map(), trRefs=new Map();
+
+/* ---------- helpers ---------- */
+function h(tag,props){
+  var el=document.createElement(tag);
+  if(props){Object.keys(props).forEach(function(k){
+    var v=props[k];
+    if(k==='class')el.className=v;
+    else if(k==='style')Object.assign(el.style,v);
+    else if(k==='value')el.value=v;
+    else if(k==='text')el.textContent=v;
+    else if(k.indexOf('on')===0)el.addEventListener(k.slice(2),v);
+    else if(v===true)el.setAttribute(k,'');
+    else if(v!==false&&v!=null)el.setAttribute(k,v);
+  });}
+  for(var i=2;i<arguments.length;i++){
+    var kid=arguments[i];
+    (Array.isArray(kid)?kid:[kid]).forEach(function(x){
+      if(x==null||x===false)return;
+      el.append(x.nodeType?x:document.createTextNode(String(x)));
+    });
+  }
+  return el;
+}
+function btn(label,fn,cls){return h('button',{class:'btn sm'+(cls?' '+cls:''),type:'button',onclick:fn,text:label});}
+function pad(n,w){return String(n).padStart(w,'0');}
+function fmt(ms){
+  ms=Math.max(0,Math.round(ms));
+  var hh=Math.floor(ms/3600000);ms-=hh*3600000;
+  var mm=Math.floor(ms/60000);ms-=mm*60000;
+  var ss=Math.floor(ms/1000);
+  return pad(hh,2)+':'+pad(mm,2)+':'+pad(ss,2)+','+pad(ms-ss*1000,3);
+}
+function shortT(sec){
+  var hh=Math.floor(sec/3600),mm=Math.floor(sec%3600/60),ss=Math.floor(sec%60);
+  return hh?hh+':'+pad(mm,2)+':'+pad(ss,2):mm+':'+pad(ss,2);
+}
+function parseTime(str){
+  str=String(str).trim().replace(',','.');
+  if(!str)return NaN;
+  var parts=str.split(':');
+  if(parts.length>3)return NaN;
+  var sec=0;
+  for(var i=0;i<parts.length;i++){
+    if(!/^\d+(\.\d+)?$/.test(parts[i]))return NaN;
+    sec=sec*60+parseFloat(parts[i]);
+  }
+  return Math.round(sec*1000);
+}
+function mk(start,end,text){return {id:uid++,start:start,end:end,text:text||'',tr:''};}
+function idxOf(c){return state.cues.indexOf(c);}
+function lastEnd(){return state.cues.reduce(function(m,c){return Math.max(m,c.end)},0);}
+var toastTimer;
+function toast(msg){
+  var t=$('#toast');t.textContent=msg;t.hidden=false;
+  clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.hidden=true;},4200);
+}
+function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+
+/* ---------- parse / build ---------- */
+function parseSRT(text){
+  text=text.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n').trim();
+  var out=[];
+  text.split(/\n{2,}/).forEach(function(b){
+    var lines=b.split('\n');
+    var i=lines.findIndex(function(l){return l.indexOf('-->')>-1;});
+    if(i<0)return;
+    var m=lines[i].match(/^\s*([\d:.,]+)\s*-->\s*([\d:.,]+)/);
+    if(!m)return;
+    var s=parseTime(m[1]),e=parseTime(m[2]);
+    if(isNaN(s)||isNaN(e))return;
+    out.push({start:s,end:e,text:lines.slice(i+1).join('\n').trim()});
+  });
+  return out;
+}
+function buildSRT(field){
+  var list=state.cues.filter(function(c){return (field==='tr'?c.tr:c.text).trim();});
+  return list.map(function(c,i){
+    return (i+1)+'\n'+fmt(c.start)+' --> '+fmt(c.end)+'\n'+(field==='tr'?c.tr:c.text).trim()+'\n';
+  }).join('\n');
+}
+
+/* ---------- checks ---------- */
+function plainLen(t){return t.replace(/\n/g,'').length;}
+function textIssues(text,dur){
+  var out=[],c=state.cfg;
+  if(!text.trim())return out;
+  var lines=text.split('\n');
+  if(lines.length>c.lines)out.push({m:lines.length+' lines (max '+c.lines+')'});
+  var longest=Math.max.apply(null,lines.map(function(l){return l.length;}));
+  if(longest>c.cpl)out.push({m:'Line of '+longest+' chars (max '+c.cpl+')'});
+  if(dur>0){
+    var cps=plainLen(text)/(dur/1000);
+    if(cps>c.cps)out.push({m:cps.toFixed(1)+' chars/s (max '+c.cps+')'});
+  }
+  return out;
+}
+function timingIssues(cue,next){
+  var out=[],c=state.cfg,d=cue.end-cue.start;
+  if(d<=0)out.push({m:'End is not after start'});
+  else{
+    if(d<c.minDur)out.push({m:'Too short ('+(d/1000).toFixed(2)+' s)'});
+    if(d>c.maxDur)out.push({m:'Too long ('+(d/1000).toFixed(1)+' s)'});
+  }
+  if(next&&next.start<cue.end)out.push({m:'Overlaps next cue'});
+  return out;
+}
+function srcIssues(cue,i){
+  var out=[];
+  if(!cue.text.trim())out.push({m:'Empty text'});
+  return out.concat(timingIssues(cue,state.cues[i+1]),textIssues(cue.text,cue.end-cue.start));
+}
+function nums(s){return (s.match(/\d+(?:[.,]\d+)?/g)||[]).map(function(x){return x.replace(',','.');});}
+function trIssues(cue){
+  if(!cue.tr.trim())return [{m:'Not translated',soft:true}];
+  var out=textIssues(cue.tr,cue.end-cue.start);
+  var low=cue.tr.toLowerCase(),srcLow=cue.text.toLowerCase();
+  state.glossary.forEach(function(g){
+    if(srcLow.indexOf(g.s.toLowerCase())>-1&&low.indexOf(g.t.toLowerCase())<0)
+      out.push({m:'Glossary: '+g.s+' \u2192 '+g.t});
+  });
+  var tn=nums(cue.tr);
+  nums(cue.text).forEach(function(n){if(tn.indexOf(n)<0)out.push({m:'Number missing: '+n});});
+  return out;
+}
+function fillBadges(el,issues){
+  el.textContent='';
+  issues.forEach(function(x){el.append(h('span',{class:'badge'+(x.soft?' soft':''),text:x.m}));});
+}
+
+/* ---------- undo / persistence ---------- */
+function pushUndo(){
+  undoStack.push(JSON.stringify(state.cues));
+  if(undoStack.length>30)undoStack.shift();
+  $('#undoBtn').disabled=false;
+}
+function undo(){
+  if(!undoStack.length)return;
+  state.cues=JSON.parse(undoStack.pop());
+  $('#undoBtn').disabled=!undoStack.length;
+  rerender();toast('Undone.');
+}
+var saveTimer;
+function schedSave(){
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(function(){
+    try{localStorage.setItem(STORE,JSON.stringify({cues:state.cues,glossary:state.glossary,srcLang:state.srcLang,tgtLang:state.tgtLang,cfg:state.cfg,uid:uid}));}catch(e){}
+  },400);
+}
+function load(){
+  try{
+    var raw=localStorage.getItem(STORE);
+    if(!raw)return;
+    var d=JSON.parse(raw);
+    state.cues=(d.cues||[]).map(function(c){return {id:c.id,start:c.start,end:c.end,text:c.text||'',tr:c.tr||''};});
+    state.glossary=d.glossary||[];
+    state.srcLang=d.srcLang||'Source';state.tgtLang=d.tgtLang||'Target';
+    if(d.cfg)Object.assign(state.cfg,d.cfg);
+    uid=Math.max(d.uid||1,state.cues.reduce(function(m,c){return Math.max(m,c.id);},0)+1);
+  }catch(e){}
+}
+
+/* ---------- screen: preview, timeline, stats ---------- */
+function selCue(){return state.cues.find(function(c){return c.id===state.sel;});}
+function renderPreview(){
+  var p=$('#preview'),c=selCue();
+  var txt=c?((state.tab==='translate'&&c.tr.trim())?c.tr:c.text):'';
+  if(c&&txt.trim()){p.textContent=txt;p.className='preview';}
+  else{p.textContent=c?'This cue has no text yet.':'Pick a cue to preview it here.';p.className='preview empty';}
+}
+function renderTimeline(){
+  var tl=$('#timeline');tl.textContent='';
+  var cues=state.cues;
+  var total=Math.max(1000,lastEnd());
+  cues.forEach(function(c,i){
+    var bad=srcIssues(c,i).length>0;
+    var b=h('button',{type:'button',class:'blk'+(bad?' bad':'')+(c.id===state.sel?' sel':''),
+      title:'Cue '+(i+1)+', '+fmt(c.start),'aria-label':'Cue '+(i+1),
+      onclick:function(){selectCue(c.id,true);}});
+    b.style.left=(c.start/total*100)+'%';
+    b.style.width=Math.max(0.25,(Math.max(0,c.end-c.start))/total*100)+'%';
+    tl.append(b);
+  });
+  var r=$('#ruler');r.textContent='';
+  var sec=total/1000,steps=[1,2,5,10,15,30,60,120,300,600,900,1800,3600,7200];
+  var step=steps.find(function(s){return sec/s<=6;})||7200;
+  for(var t=0;t<=sec;t+=step){
+    var sp=h('span',{text:shortT(t)});
+    sp.style.left=(t/sec*100)+'%';
+    if(t===0)sp.style.transform='none';
+    r.append(sp);
+  }
+}
+function renderStats(){
+  var n=state.cues.length;
+  if(!n){$('#stats').textContent='No cues yet.';return;}
+  var bad=state.cues.filter(function(c,i){return srcIssues(c,i).length;}).length;
+  $('#stats').textContent=n+' cues, '+shortT(lastEnd()/1000)+' long, '+bad+' flagged';
+}
+function selectCue(id,scroll){
+  state.sel=id;
+  $$('.blk').forEach(function(b,i){b.classList.toggle('sel',state.cues[i]&&state.cues[i].id===id);});
+  $$('.row').forEach(function(r){r.classList.toggle('sel',r.getAttribute('data-id')===String(id));});
+  renderPreview();
+  if(scroll){
+    var row=$('.panel:not([hidden]) .row[data-id="'+id+'"]');
+    if(row)row.scrollIntoView({block:'center',behavior:'smooth'});
+  }
+}
+
+/* ---------- refresh scheduling ---------- */
+var raf=0;
+function schedRefresh(){
+  if(raf)return;
+  raf=requestAnimationFrame(function(){raf=0;refresh();});
+}
+function refresh(){
+  renderTimeline();renderStats();renderPreview();
+  if(state.tab==='edit')refreshEditMeta();
+  schedSave();
+}
+function rerender(){
+  renderTimeline();renderStats();renderPreview();
+  if(state.tab==='create')prefillCreate();
+  if(state.tab==='edit')renderEditList();
+  schedSave();
+}
+
+/* ---------- tabs ---------- */
+function setTab(t){
+  state.tab=t;
+  $$('.tab').forEach(function(b){b.setAttribute('aria-selected',b.getAttribute('data-tab')===t?'true':'false');});
+  $$('.panel').forEach(function(p){p.hidden=p.getAttribute('data-panel')!==t;});
+  rerender();
+}
+
+/* ---------- create ---------- */
+var touched={start:false,end:false};
+function prefillCreate(){
+  var last=lastEnd(),s=last?last+100:1000;
+  $('#qpStart').placeholder=fmt(s);
+  if(!touched.start)$('#addStart').value=fmt(s);
+  if(!touched.end)$('#addEnd').value=fmt(s+2000);
+}
+function quickAdd(){
+  var lines=$('#qp').value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  if(!lines.length){toast('Type or paste some lines first.');return;}
+  var gap=Math.max(0,+$('#qpGap').value||0),last=lastEnd(),t;
+  var sv=$('#qpStart').value.trim();
+  if(sv){t=parseTime(sv);if(isNaN(t)){toast('Start time not recognised. Use HH:MM:SS,mmm.');return;}}
+  else t=last?last+gap:1000;
+  var mode=$('#qpMode').value,fixed=(+$('#qpFixed').value||2.5)*1000,rcps=+$('#qpCps').value||15;
+  pushUndo();
+  lines.forEach(function(l){
+    var text=l.split('|').map(function(s){return s.trim();}).filter(Boolean).join('\n');
+    var d=mode==='fixed'?fixed:Math.min(state.cfg.maxDur,Math.max(1200,plainLen(text)/rcps*1000));
+    d=Math.round(d);
+    state.cues.push(mk(t,t+d,text));
+    t+=d+gap;
+  });
+  $('#qp').value='';$('#qpStart').value='';touched.start=touched.end=false;
+  rerender();toast('Added '+lines.length+' cues. The last one ends at '+fmt(t-gap)+'.');
+}
+function addOne(){
+  var s=parseTime($('#addStart').value),e=parseTime($('#addEnd').value),text=$('#addText').value.trim();
+  if(isNaN(s)||isNaN(e)){toast('Time not recognised. Use HH:MM:SS,mmm.');return;}
+  if(e<=s){toast('End must be after start.');return;}
+  if(!text){toast('Add some text for the cue.');return;}
+  pushUndo();
+  var c=mk(s,e,text);state.cues.push(c);
+  $('#addText').value='';touched.start=touched.end=false;
+  state.sel=c.id;rerender();toast('Cue added.');
+}
+
+/* ---------- edit ---------- */
+function setTime(c,key,input){
+  var v=parseTime(input.value);
+  if(isNaN(v)){input.classList.add('invalid');toast('Time not recognised. Use HH:MM:SS,mmm.');return;}
+  input.classList.remove('invalid');
+  c[key]=v;input.value=fmt(v);schedRefresh();
+}
+function editRow(c,i){
+  var ref={};
+  var st=h('input',{class:'tc',value:fmt(c.start),'aria-label':'Start time',onchange:function(e){setTime(c,'start',e.target);}});
+  var en=h('input',{class:'tc',value:fmt(c.end),'aria-label':'End time',onchange:function(e){setTime(c,'end',e.target);}});
+  var ta=h('textarea',{rows:2,'aria-label':'Subtitle text',value:c.text,oninput:function(e){c.text=e.target.value;schedRefresh();}});
+  ref.dur=h('span',{class:'dur'});ref.badges=h('div',{class:'badges'});
+  var acts=h('div',{class:'acts'},
+    btn('Split at cursor',function(){splitCue(c,ta);}),
+    btn('Merge with next',function(){mergeNext(c);}),
+    btn('Insert after',function(){insertAfter(c);}),
+    btn('Delete',function(){delCue(c);},'danger'));
+  var row=h('div',{class:'row'+(c.id===state.sel?' sel':''),'data-id':c.id,onfocusin:function(){if(state.sel!==c.id)selectCue(c.id,false);}},
+    h('div',{class:'idx',text:String(i+1)}),
+    h('div',{},h('div',{class:'times'},st,h('span',{class:'arrow',text:'to'}),en,ref.dur),ta,ref.badges,acts));
+  ref.row=row;editRefs.set(c.id,ref);
+  return row;
+}
+function renderEditList(){
+  var list=$('#editList');list.textContent='';editRefs.clear();
+  if(!state.cues.length){
+    list.append(h('div',{class:'empty-state'},'No cues yet. Open an .srt file above, or add cues in Create.'));
+    return;
+  }
+  var only=$('#onlyIssues').checked;
+  state.cues.forEach(function(c,i){
+    var row=editRow(c,i);
+    if(only&&!srcIssues(c,i).length)row.hidden=true;
+    list.append(row);
+  });
+  refreshEditMeta();
+}
+function refreshEditMeta(){
+  state.cues.forEach(function(c,i){
+    var r=editRefs.get(c.id);if(!r)return;
+    r.dur.textContent=((c.end-c.start)/1000).toFixed(2)+' s';
+    fillBadges(r.badges,srcIssues(c,i));
+  });
+}
+function splitCue(c,ta){
+  var t=c.text,pos=ta.selectionStart;
+  if(!(pos>0&&pos<t.length)){
+    var mid=Math.floor(t.length/2),best=-1;
+    for(var d=0;d<t.length;d++){
+      if(t[mid-d]===' '){best=mid-d;break;}
+      if(t[mid+d]===' '){best=mid+d;break;}
+    }
+    pos=best>0?best:mid;
+  }
+  var a=t.slice(0,pos).trim(),b=t.slice(pos).trim();
+  if(!a||!b){toast('Nothing to split here.');return;}
+  pushUndo();
+  var mid2=Math.round(c.start+(c.end-c.start)*a.length/(a.length+b.length));
+  var nc=mk(mid2,c.end,b);
+  c.text=a;c.end=mid2;
+  state.cues.splice(idxOf(c)+1,0,nc);
+  state.sel=nc.id;rerender();
+}
+function mergeNext(c){
+  var i=idxOf(c),n=state.cues[i+1];
+  if(!n){toast('This is the last cue.');return;}
+  pushUndo();
+  c.text=(c.text+'\n'+n.text).trim();
+  c.tr=[c.tr,n.tr].filter(Boolean).join('\n');
+  c.end=Math.max(c.end,n.end);
+  state.cues.splice(i+1,1);rerender();
+}
+function insertAfter(c){
+  pushUndo();
+  var nc=mk(c.end,c.end+2000,'');
+  state.cues.splice(idxOf(c)+1,0,nc);
+  state.sel=nc.id;rerender();
+}
+function delCue(c){
+  pushUndo();
+  state.cues.splice(idxOf(c),1);
+  if(state.sel===c.id)state.sel=null;
+  rerender();
+}
+function shiftAll(){
+  var sec=parseFloat($('#shiftBy').value);
+  if(isNaN(sec)||sec===0){toast('Enter a number of seconds to shift by.');return;}
+  var ms=Math.round(sec*1000),from=0;
+  if($('#shiftScope').value==='from'){
+    var si=state.cues.findIndex(function(c){return c.id===state.sel;});
+    if(si<0){toast('Select a cue first, or shift all cues.');return;}
+    from=si;
+  }
+  var targets=state.cues.slice(from);
+  if(targets.some(function(c){return c.start+ms<0;})){toast('That would move a cue before 00:00:00.');return;}
+  pushUndo();
+  targets.forEach(function(c){c.start+=ms;c.end+=ms;});
+  rerender();toast('Shifted '+targets.length+' cues by '+sec+' s.');
+}
+function fixOverlaps(){
+  var n=0;
+  pushUndo();
+  state.cues.forEach(function(c,i){
+    var nx=state.cues[i+1];
+    if(nx&&nx.start<c.end&&nx.start>c.start){c.end=Math.max(c.start+1,nx.start-1);n++;}
+  });
+  rerender();toast(n?'Trimmed '+n+' overlapping cues.':'No overlaps to fix.');
+}
+function sortCues(){
+  pushUndo();
+  state.cues=state.cues.map(function(c,i){return {c:c,i:i};})
+    .sort(function(a,b){return a.c.start-b.c.start||a.i-b.i;}).map(function(x){return x.c;});
+  rerender();toast('Sorted by start time.');
+}
+function wrapText(t){
+  var flat=t.replace(/\s*\n\s*/g,' ').trim(),cpl=state.cfg.cpl;
+  if(flat.length<=cpl)return flat;
+  var mid=Math.floor(flat.length/2),best=-1;
+  for(var d=0;d<flat.length;d++){
+    if(flat[mid-d]===' '){best=mid-d;break;}
+    if(flat[mid+d]===' '){best=mid+d;break;}
+  }
+  if(best<0)return flat;
+  return flat.slice(0,best)+'\n'+flat.slice(best+1);
+}
+function wrapAll(field){
+  pushUndo();var n=0;
+  state.cues.forEach(function(c){
+    var w=wrapText(c[field]);
+    if(w!==c[field]){c[field]=w;n++;}
+  });
+  rerender();toast(n?'Rewrapped '+n+' cues.':'Nothing needed rewrapping.');
+}
+
+/* ---------- open / paste ---------- */
+function loadSource(text){
+  var list=parseSRT(text);
+  if(!list.length){toast('No cues found. Is this an .srt file?');return;}
+  pushUndo();
+  state.cues=list.map(function(x){return mk(x.start,x.end,x.text);});
+  state.sel=null;
+  rerender();toast('Opened '+list.length+' cues.');
+}
+function readFile(file,cb){
+  var fr=new FileReader();
+  fr.onload=function(){cb(String(fr.result));};
+  fr.onerror=function(){toast('Could not read that file.');};
+  fr.readAsText(file,'utf-8');
+}
+var clearArmed=false,clearTimer;
+function clearProject(){
+  var b=$('#clearBtn');
+  if(!clearArmed){
+    clearArmed=true;b.textContent='Click again to clear everything';
+    clearTimer=setTimeout(function(){clearArmed=false;b.textContent='Clear project';},4000);
+    return;
+  }
+  clearTimeout(clearTimer);clearArmed=false;b.textContent='Clear project';
+  pushUndo();state.cues=[];state.sel=null;rerender();toast('Project cleared. Undo brings it back.');
+}
+
+/* ---------- export ---------- */
+var exField='text';
+function openExport(field){
+  var txt=buildSRT(field);
+  if(!txt){toast(field==='tr'?'No translations to export yet.':'No cues to export yet.');return;}
+  exField=field;
+  $('#exTitle').textContent=field==='tr'?'Translated .srt':'Source .srt';
+  $('#exText').value=txt;
+  $('#exNote').textContent=field==='tr'&&state.cues.some(function(c){return !c.tr.trim();})
+    ?'Cues without a translation are left out.':'';
+  $('#export').hidden=false;
+  $('#export').scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+async function saveFile(){
+  var text=$('#exText').value,base=exField==='tr'?'translation':'subtitles',dl=null;
+  try{dl=window.claude?await window.claude.use('downloads'):null;}catch(e){dl=null;}
+  if(dl){
+    try{
+      await dl.save({filename:base+'.txt',data:text});
+      toast('Saved as '+base+'.txt. Rename it to .srt before using it.');
+    }catch(err){
+      if(!err||err.code!=='declined')toast('Could not save. Use Copy text instead.');
+    }
+    return;
+  }
+  var url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'}));
+  var a=document.createElement('a');a.href=url;a.download=base+'.srt';
+  document.body.append(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(url);},1500);
+}
+async function copyText(){
+  var ta=$('#exText');
+  try{await navigator.clipboard.writeText(ta.value);toast('Copied.');return;}catch(e){}
+  ta.select();
+  try{document.execCommand('copy');toast('Copied.');}catch(e){toast('Select the text above and copy it.');}
+}
+
+/* ---------- wiring ---------- */
+function bindCfg(id,key,scale){
+  $(id).addEventListener('input',function(e){
+    var v=parseFloat(e.target.value);
+    if(!isNaN(v)&&v>0){state.cfg[key]=v*scale;refresh();}
+  });
+}
+function init(){
+  load();
+  $$('.tab').forEach(function(b){b.addEventListener('click',function(){setTab(b.getAttribute('data-tab'));});});
+  $$('[data-export]').forEach(function(b){b.addEventListener('click',function(){openExport(b.getAttribute('data-export'));});});
+  $$('[data-goto]').forEach(function(b){b.addEventListener('click',function(){setTab(b.getAttribute('data-goto'));});});
+
+  $('#openBtn').addEventListener('click',function(){$('#openFile').click();});
+  $('#openFile').addEventListener('change',function(e){
+    var f=e.target.files[0];if(f)readFile(f,loadSource);e.target.value='';
+  });
+  $('#pasteBtn').addEventListener('click',function(){$('#pasteBox').hidden=!$('#pasteBox').hidden;});
+  $('#pasteClose').addEventListener('click',function(){$('#pasteBox').hidden=true;});
+  $('#pasteLoad').addEventListener('click',function(){
+    loadSource($('#pasteText').value);
+    if(state.cues.length){$('#pasteText').value='';$('#pasteBox').hidden=true;}
+  });
+  $('#undoBtn').addEventListener('click',undo);
+  $('#clearBtn').addEventListener('click',clearProject);
+  $('#exClose').addEventListener('click',function(){$('#export').hidden=true;});
+  $('#exSave').addEventListener('click',saveFile);
+  $('#exCopy').addEventListener('click',copyText);
+
+  $('#qpAdd').addEventListener('click',quickAdd);
+  $('#addOne').addEventListener('click',addOne);
+  $('#addStart').addEventListener('input',function(){touched.start=true;});
+  $('#addEnd').addEventListener('input',function(){touched.end=true;});
+
+  bindCfg('#cfgCpl','cpl',1);bindCfg('#cfgLines','lines',1);bindCfg('#cfgCps','cps',1);
+  bindCfg('#cfgMin','minDur',1000);bindCfg('#cfgMax','maxDur',1000);
+  $('#shiftGo').addEventListener('click',shiftAll);
+  $('#fixOverlap').addEventListener('click',fixOverlaps);
+  $('#sortCues').addEventListener('click',sortCues);
+  $('#wrapSrc').addEventListener('click',function(){wrapAll('text');});
+  $('#onlyIssues').addEventListener('change',renderEditList);
+
+  $('#cfgCpl').value=state.cfg.cpl;$('#cfgLines').value=state.cfg.lines;$('#cfgCps').value=state.cfg.cps;
+  $('#cfgMin').value=state.cfg.minDur/1000;$('#cfgMax').value=state.cfg.maxDur/1000;
+  rerender();
+}
+init();
+})();
+</script>
+</body>
+</html>
