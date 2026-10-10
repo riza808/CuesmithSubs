@@ -155,6 +155,7 @@ progress{width:100%;height:10px;accent-color:var(--accent)}
       <label class="check"><input type="checkbox" id="vFollow" checked> Follow</label>
       <button class="btn sm danger" id="vRemove" type="button">Remove video</button>
     </div>
+    <div class="note" id="asrTop" hidden></div>
     <div class="preview empty" id="preview">Pick a cue to preview it here.</div>
     <div class="timeline" id="timeline"></div>
     <div class="ruler" id="ruler" aria-hidden="true"></div>
@@ -237,7 +238,7 @@ progress{width:100%;height:10px;accent-color:var(--accent)}
       </div>
       <div class="line"><button class="btn primary" id="asrGo" type="button">Generate captions</button><button class="btn" id="asrStop" type="button" hidden>Stop</button></div>
       <progress id="asrProg" hidden style="margin-top:10px"></progress>
-      <p class="note" id="asrMsg">Turns the spoken audio into cues in the spoken language, ready to export and translate. Open the video first. It runs on your device, and the speech model downloads on first use, so it needs internet and your hosted copy, not the preview.</p>
+      <p class="note" id="asrMsg">Turns the spoken audio into timed cues in the spoken language, then opens Edit and check so you can review them. Open the video first. It runs on your device, and the speech model downloads on first use, so it needs internet and your hosted copy, not the preview.</p>
     </section>
 
     <section class="card">
@@ -944,6 +945,7 @@ function tsBack(){
 /* ---------- auto captions ---------- */
 function setAsr(msg,pct){
   $('#asrMsg').textContent=msg;
+  var tp=$('#asrTop');tp.textContent='Auto captions: '+msg;tp.hidden=false;
   var p=$('#asrProg');p.hidden=false;
   if(pct==null)p.removeAttribute('value');else{p.max=100;p.value=pct;}
 }
@@ -1016,9 +1018,10 @@ function isSilent(a){
   for(var i=0;i<a.length;i+=16){s+=a[i]*a[i];c++;}
   return Math.sqrt(s/Math.max(1,c))<0.002;
 }
-function asrStatus(k,n,t0,added){
-  var done=k+1,eta=(Date.now()-t0)/1000/done*(n-done);
-  setAsr('Transcribing part '+done+' of '+n+' on your '+asr.mode+', about '+(eta<90?Math.round(eta)+' s':Math.round(eta/60)+' min')+' left. '+added+' cues so far.',done/n*100);
+function asrStatus(k,n,t0,added,starting){
+  var done=starting?k:k+1,eta=done>0?(Date.now()-t0)/1000/done*(n-done):null;
+  var left=eta==null?'. The first part takes longest while it warms up':', about '+(eta<90?Math.round(eta)+' s':Math.round(eta/60)+' min')+' left';
+  setAsr('Transcribing part '+(starting?k+1:done)+' of '+n+' on your '+asr.mode+left+'. '+added+' cues so far.',done/n*100);
 }
 async function runAsr(){
   if(asr.busy)return;
@@ -1040,7 +1043,8 @@ async function runAsr(){
     for(var k=0;k<n;k++){
       if(asr.cancel)break;
       var off=k*30,slice=audio.slice(k*WIN,Math.min(total,(k+1)*WIN));
-      if(isSilent(slice)){asrStatus(k,n,t0,added);continue;}
+      asrStatus(k,n,t0,added,true);
+      if(isSilent(slice))continue;
       var out;
       try{out=await asr.pipe(slice,base);}
       catch(e){
@@ -1062,15 +1066,16 @@ async function runAsr(){
       rerender();
       asrStatus(k,n,t0,added);
     }
-    $('#asrProg').hidden=true;
+    $('#asrProg').hidden=true;$('#asrTop').hidden=true;
     if(!added){
       $('#asrMsg').textContent=asr.cancel?'Stopped before any speech was found.':'No speech was found in this video.';
     }else{
-      $('#asrMsg').textContent=(asr.cancel?'Stopped. ':'Done. ')+'Added '+added+' cues. Check them in Edit and check, then export and translate.';
+      $('#asrMsg').textContent=(asr.cancel?'Stopped. ':'Done. ')+'Added '+added+' cues. They are on the timeline and in the Edit and check tab. Play the video to see them, adjust timing with Play cue and the + and - buttons, then export the .srt.';
       setTab('edit');
+      toast('Captions ready: '+added+' cues. Review them here.');
     }
   }catch(err){
-    $('#asrProg').hidden=true;
+    $('#asrProg').hidden=true;$('#asrTop').hidden=true;
     var msg=stage==='audio'?'Could not read audio from this file. Try an MP4 with AAC audio, or a shorter clip.'
       :stage==='model'?'Could not load the speech model. This needs internet and your hosted copy, not the preview.'
       :'Transcription stopped: '+((err&&err.message)||'unknown error');
