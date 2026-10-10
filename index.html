@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F6E6E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="CuesmithSubs">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>CuesmithSubs</title>
 <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -55,7 +62,7 @@ h2{font-size:1.05rem;margin:0 0 8px;font-weight:700}
 .screen.has-video{position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
 .screen.has-video .ruler,.screen.has-video .stats{display:none}
 .vwrap{position:relative;background:#000;border-radius:8px;overflow:hidden}
-.vwrap video{display:block;width:100%;max-height:28vh;background:#000}
+.vwrap video{display:block;width:100%;max-height:var(--vmax,40vh);background:#000}
 .vcap{position:absolute;left:8px;right:8px;bottom:46px;text-align:center;pointer-events:none}
 .vcap span{background:rgba(0,0,0,.72);color:#fff;padding:2px 8px;border-radius:4px;white-space:pre-wrap;line-height:1.6;font-size:.95rem}
 .vtools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
@@ -119,6 +126,14 @@ progress{width:100%;height:10px;accent-color:var(--accent)}
 .chip{display:inline-flex;gap:6px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:2px 4px 2px 10px;font-size:.88rem}
 .chip button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:1rem;line-height:1;padding:2px 6px}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:92%;background:var(--ink);color:var(--bg);padding:.6rem 1rem;border-radius:8px;font-size:.92rem;z-index:10}
+@media (min-width:900px){
+  .wrap{max-width:1280px;display:grid;grid-template-columns:minmax(420px,6fr) 6fr;column-gap:20px;align-items:start}
+  .wrap>*{grid-column:2;min-width:0}
+  .wrap>h1,.wrap>.lede{grid-column:1 / -1}
+  .wrap>.screen{grid-column:1;grid-row:3 / span 60;position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px);align-self:start}
+  .screen.has-video .ruler,.screen.has-video .stats{display:block}
+  .row{scroll-margin-top:12px}
+}
 </style>
 </head>
 <body>
@@ -136,6 +151,7 @@ progress{width:100%;height:10px;accent-color:var(--accent)}
       <button class="btn sm" id="vFwd" type="button">Forward 2 s</button>
       <button class="btn sm" id="vCue" type="button">Play cue</button>
       <select id="vSpeed" aria-label="Playback speed"><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1" selected>1x</option><option value="1.25">1.25x</option></select>
+      <select id="vSize" aria-label="Video size"><option value="25">Small video</option><option value="40">Medium video</option><option value="60">Large video</option><option value="75">Extra large</option></select>
       <label class="check"><input type="checkbox" id="vFollow" checked> Follow</label>
       <button class="btn sm danger" id="vRemove" type="button">Remove video</button>
     </div>
@@ -150,6 +166,7 @@ progress{width:100%;height:10px;accent-color:var(--accent)}
     <button class="btn" id="pasteBtn">Paste SRT text</button>
     <button class="btn" id="undoBtn" disabled>Undo</button>
     <button class="btn danger" id="clearBtn">Clear project</button>
+    <button class="btn" id="installBtn" hidden>Install app</button>
     <input type="file" id="openFile" accept=".srt,.vtt,.txt" hidden>
     <button class="btn" id="videoBtn">Open video</button>
     <input type="file" id="videoFile" accept="video/*,audio/*" hidden>
@@ -206,6 +223,21 @@ progress{width:100%;height:10px;accent-color:var(--accent)}
         </label>
       </div>
       <div class="line"><button class="btn primary" id="qpAdd">Add cues</button></div>
+    </section>
+
+    <section class="card">
+      <h2>Auto captions from the video</h2>
+      <div class="grid">
+        <label>Spoken language
+          <select id="asrLang"><option value="">Detect automatically</option><option value="indonesian">Indonesian</option><option value="chinese">Chinese</option><option value="english">English</option><option value="sundanese">Sundanese</option><option value="javanese">Javanese</option><option value="malay">Malay</option><option value="japanese">Japanese</option><option value="korean">Korean</option></select>
+        </label>
+        <label>Quality
+          <select id="asrModel"><option value="Xenova/whisper-tiny">Fast (tiny)</option><option value="Xenova/whisper-base" selected>Better (base)</option><option value="Xenova/whisper-small">Best (small, big download)</option></select>
+        </label>
+      </div>
+      <div class="line"><button class="btn primary" id="asrGo" type="button">Generate captions</button></div>
+      <progress id="asrProg" hidden style="margin-top:10px"></progress>
+      <p class="note" id="asrMsg">Turns the spoken audio into cues in the spoken language, ready to export and translate. Open the video first. It runs on your device, and the speech model downloads on first use, so it needs internet and your hosted copy, not the preview.</p>
     </section>
 
     <section class="card">
@@ -794,7 +826,7 @@ async function copyText(){
 }
 
 /* ---------- video ---------- */
-var vidUrl=null,playUntil=null,lastActive=null,looping=false,ts=null;
+var vidUrl=null,playUntil=null,lastActive=null,looping=false,ts=null,sizeInit=false,videoFile=null,asr={pipe:null,model:null,busy:false};
 function vid(){return $('#vid');}
 function trimS(x){return x.trim();}
 function nowMs(){return Math.round(vid().currentTime*1000);}
@@ -848,12 +880,20 @@ function playCue(c){
 }
 function applyVideoUI(){
   var hv=state.video,sc=$('#screen');
+  if(hv&&!sizeInit){
+    sizeInit=true;
+    var w0=window.matchMedia&&window.matchMedia('(min-width:900px)').matches;
+    $('#vSize').value=w0?'60':'40';
+    document.documentElement.style.setProperty('--vmax',$('#vSize').value+'vh');
+  }
   $('#vwrap').hidden=!hv;$('#vtools').hidden=!hv;$('#preview').hidden=hv;
   sc.classList.toggle('has-video',hv);
-  document.documentElement.style.setProperty('--stickyH',hv?(sc.offsetHeight+'px'):'0px');
+  var wide=window.matchMedia&&window.matchMedia('(min-width:900px)').matches;
+  document.documentElement.style.setProperty('--stickyH',(hv&&!wide)?(sc.offsetHeight+'px'):'0px');
 }
 function openVideo(file){
   if(vidUrl)URL.revokeObjectURL(vidUrl);
+  videoFile=file;
   vidUrl=URL.createObjectURL(file);
   var v=vid();v.src=vidUrl;v.load();
 }
@@ -861,7 +901,7 @@ function removeVideo(){
   var v=vid();
   v.pause();v.removeAttribute('src');v.load();
   if(vidUrl){URL.revokeObjectURL(vidUrl);vidUrl=null;}
-  state.video=false;lastActive=null;playUntil=null;
+  state.video=false;lastActive=null;playUntil=null;videoFile=null;
   $('#vcap').textContent='';$('#vcap').removeAttribute('data-t');
   applyVideoUI();renderTimeline();markActive(null);
 }
@@ -901,6 +941,93 @@ function tsBack(){
   ts.i--;ts.open=null;
   seek(c.start-1000);rerender();tsShow();
 }
+/* ---------- auto captions ---------- */
+function setAsr(msg,pct){
+  $('#asrMsg').textContent=msg;
+  var p=$('#asrProg');p.hidden=false;
+  if(pct==null)p.removeAttribute('value');else{p.max=100;p.value=pct;}
+}
+async function audioFromFile(file){
+  var AC=window.AudioContext||window.webkitAudioContext,ctx=new AC();
+  var buf=await file.arrayBuffer();
+  var audio=await new Promise(function(res,rej){ctx.decodeAudioData(buf,res,rej);});
+  try{ctx.close();}catch(e){}
+  var off=new OfflineAudioContext(1,Math.ceil(audio.duration*16000),16000);
+  var src=off.createBufferSource();src.buffer=audio;src.connect(off.destination);src.start();
+  var rendered=await new Promise(function(res,rej){
+    var p=off.startRendering();
+    if(p&&p.then)p.then(res,rej);else off.oncomplete=function(e){res(e.renderedBuffer);};
+  });
+  return rendered.getChannelData(0);
+}
+function splitLong(text,s,e,out){
+  var max=state.cfg.cpl*state.cfg.lines;
+  if(text.length<=max){out.push({start:s,end:e,text:wrapText(text)});return;}
+  var mid=Math.floor(text.length/2),best=-1,marks=' .,!?;:\u3002\uFF0C\uFF01\uFF1F\uFF1B';
+  for(var d=0;d<mid;d++){
+    if(marks.indexOf(text[mid-d])>-1){best=mid-d;break;}
+    if(marks.indexOf(text[mid+d])>-1){best=mid+d;break;}
+  }
+  if(best<1)best=mid;
+  var a=text.slice(0,best+1).trim(),b=text.slice(best+1).trim();
+  if(!a||!b){out.push({start:s,end:e,text:wrapText(text)});return;}
+  var m=Math.round(s+(e-s)*a.length/(a.length+b.length));
+  splitLong(a,s,m,out);splitLong(b,m,e,out);
+}
+function chunksToCues(chunks,total){
+  var out=[];
+  chunks.forEach(function(ch){
+    var t=(ch.text||'').trim();if(!t)return;
+    var ts0=ch.timestamp||[],s=ts0[0]!=null?ts0[0]:0,e=ts0[1]!=null?ts0[1]:Math.min(total,s+3);
+    if(e<=s)e=Math.min(total,s+2);
+    splitLong(t,Math.round(s*1000),Math.round(e*1000),out);
+  });
+  return out;
+}
+async function runAsr(){
+  if(asr.busy)return;
+  if(!state.video||!videoFile){toast('Open a video first.');return;}
+  if(videoFile.size>400*1024*1024){toast('This file is very large. Use a shorter clip, or extract the audio first.');return;}
+  asr.busy=true;$('#asrGo').disabled=true;
+  var stage='audio';
+  try{
+    setAsr('Reading the audio from the video...',null);
+    var audio=await audioFromFile(videoFile);
+    stage='model';
+    var model=$('#asrModel').value;
+    if(!asr.pipe||asr.model!==model){
+      setAsr('Loading the speech model (first time only)...',0);
+      var T=await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+      T.env.allowLocalModels=false;
+      try{T.env.backends.onnx.wasm.proxy=true;}catch(e){}
+      asr.pipe=await T.pipeline('automatic-speech-recognition',model,{progress_callback:function(p){
+        if(p&&p.status==='progress'&&typeof p.progress==='number')setAsr('Downloading the speech model: '+Math.round(p.progress)+'%',p.progress);
+      }});
+      asr.model=model;
+    }
+    stage='run';
+    setAsr('Transcribing. This can take several minutes. Keep this page open.',null);
+    var lang=$('#asrLang').value,opts={chunk_length_s:30,stride_length_s:5,return_timestamps:true};
+    if(lang){opts.language=lang;opts.task='transcribe';}
+    var out=await asr.pipe(audio,opts);
+    var made=chunksToCues(out.chunks||[],audio.length/16000);
+    if(!made.length){setAsr('No speech was found in this video.',null);$('#asrProg').hidden=true;return;}
+    pushUndo();
+    made.forEach(function(x){state.cues.push(mk(x.start,Math.max(x.end,x.start+500),x.text));});
+    state.cues=state.cues.map(function(c,i){return {c:c,i:i};}).sort(function(a,b){return a.c.start-b.c.start||a.i-b.i;}).map(function(x){return x.c;});
+    $('#asrProg').hidden=true;
+    $('#asrMsg').textContent='Added '+made.length+' cues. Check them in Edit and check, then export and translate.';
+    setTab('edit');
+  }catch(err){
+    $('#asrProg').hidden=true;
+    var msg=stage==='audio'?'Could not read audio from this file. Try an MP4 with AAC audio, or a shorter clip.'
+      :stage==='model'?'Could not load the speech model. This needs internet and your hosted copy, not the preview.'
+      :'Transcription stopped: '+((err&&err.message)||'unknown error');
+    $('#asrMsg').textContent=msg;toast(msg);
+  }finally{
+    asr.busy=false;$('#asrGo').disabled=false;
+  }
+}
 function initVideo(){
   var v=vid();
   v.addEventListener('loadedmetadata',function(){
@@ -937,6 +1064,8 @@ function initVideo(){
     if(!state.video){toast('Open a video first.');return;}
     $('#addEnd').value=fmt(nowMs());touched.end=true;
   });
+  $('#vSize').addEventListener('change',function(e){document.documentElement.style.setProperty('--vmax',e.target.value+'vh');applyVideoUI();});
+  $('#asrGo').addEventListener('click',runAsr);
   $('#tsLoad').addEventListener('click',tsLoad);
   $('#tsTap').addEventListener('click',tsTap);
   $('#tsEnd').addEventListener('click',tsEnd);
@@ -992,6 +1121,20 @@ function init(){
   rerender();
 }
 init();
+
+  (function(){
+    var deferred=null,ib=document.getElementById('installBtn');
+    window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferred=e;if(ib)ib.hidden=false;});
+    if(ib)ib.addEventListener('click',function(){
+      if(!deferred)return;
+      deferred.prompt();
+      deferred.userChoice.then(function(){deferred=null;ib.hidden=true;});
+    });
+    window.addEventListener('appinstalled',function(){if(ib)ib.hidden=true;});
+    if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){
+      window.addEventListener('load',function(){try{navigator.serviceWorker.register('sw.js').catch(function(){});}catch(e){}});
+    }
+  })();
 })();
 </script>
 </body>
