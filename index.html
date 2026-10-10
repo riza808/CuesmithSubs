@@ -235,7 +235,7 @@ progress{width:100%;height:10px;accent-color:var(--accent)}
           <select id="asrModel"><option value="Xenova/whisper-tiny">Fast (tiny)</option><option value="Xenova/whisper-base" selected>Better (base)</option><option value="Xenova/whisper-small">Best (small, big download)</option></select>
         </label>
       </div>
-      <div class="line"><button class="btn primary" id="asrGo" type="button">Generate captions</button></div>
+      <div class="line"><button class="btn primary" id="asrGo" type="button">Generate captions</button><button class="btn" id="asrStop" type="button" hidden>Stop</button></div>
       <progress id="asrProg" hidden style="margin-top:10px"></progress>
       <p class="note" id="asrMsg">Turns the spoken audio into cues in the spoken language, ready to export and translate. Open the video first. It runs on your device, and the speech model downloads on first use, so it needs internet and your hosted copy, not the preview.</p>
     </section>
@@ -826,7 +826,7 @@ async function copyText(){
 }
 
 /* ---------- video ---------- */
-var vidUrl=null,playUntil=null,lastActive=null,looping=false,ts=null,sizeInit=false,videoFile=null,asr={pipe:null,model:null,busy:false};
+var vidUrl=null,playUntil=null,lastActive=null,looping=false,ts=null,sizeInit=false,videoFile=null,asr={pipe:null,model:null,busy:false,cancel:false,mode:'',triedCpu:false};
 function vid(){return $('#vid');}
 function trimS(x){return x.trim();}
 function nowMs(){return Math.round(vid().currentTime*1000);}
@@ -984,40 +984,91 @@ function chunksToCues(chunks,total){
   });
   return out;
 }
+var ASR_MAP={'Xenova/whisper-tiny':'onnx-community/whisper-tiny','Xenova/whisper-base':'onnx-community/whisper-base','Xenova/whisper-small':'onnx-community/whisper-small'};
+function asrProgress(p){
+  if(p&&p.status==='progress'&&typeof p.progress==='number')setAsr('Downloading the speech model: '+Math.round(p.progress)+'%',p.progress);
+}
+async function loadAsrGpu(model){
+  if(!navigator.gpu)return null;
+  try{
+    var ad=await navigator.gpu.requestAdapter();
+    if(!ad)return null;
+    var T=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3');
+    T.env.allowLocalModels=false;
+    return await T.pipeline('automatic-speech-recognition',ASR_MAP[model],{device:'webgpu',dtype:{encoder_model:'fp32',decoder_model_merged:'q4'},progress_callback:asrProgress});
+  }catch(e){return null;}
+}
+async function loadAsrCpu(model){
+  var T=await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+  T.env.allowLocalModels=false;
+  try{T.env.backends.onnx.wasm.proxy=true;}catch(e){}
+  return await T.pipeline('automatic-speech-recognition',model,{progress_callback:asrProgress});
+}
+async function loadAsr(model){
+  setAsr('Loading the speech model (first time only)...',0);
+  var p=await loadAsrGpu(model);
+  if(p){asr.mode='GPU';return p;}
+  asr.mode='CPU';
+  return await loadAsrCpu(model);
+}
+function isSilent(a){
+  var s=0,c=0;
+  for(var i=0;i<a.length;i+=16){s+=a[i]*a[i];c++;}
+  return Math.sqrt(s/Math.max(1,c))<0.002;
+}
+function asrStatus(k,n,t0,added){
+  var done=k+1,eta=(Date.now()-t0)/1000/done*(n-done);
+  setAsr('Transcribing part '+done+' of '+n+' on your '+asr.mode+', about '+(eta<90?Math.round(eta)+' s':Math.round(eta/60)+' min')+' left. '+added+' cues so far.',done/n*100);
+}
 async function runAsr(){
   if(asr.busy)return;
   if(!state.video||!videoFile){toast('Open a video first.');return;}
   if(videoFile.size>400*1024*1024){toast('This file is very large. Use a shorter clip, or extract the audio first.');return;}
   asr.busy=true;$('#asrGo').disabled=true;
-  var stage='audio';
+  var stage='audio',model=$('#asrModel').value;
   try{
     setAsr('Reading the audio from the video...',null);
     var audio=await audioFromFile(videoFile);
     stage='model';
-    var model=$('#asrModel').value;
-    if(!asr.pipe||asr.model!==model){
-      setAsr('Loading the speech model (first time only)...',0);
-      var T=await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
-      T.env.allowLocalModels=false;
-      try{T.env.backends.onnx.wasm.proxy=true;}catch(e){}
-      asr.pipe=await T.pipeline('automatic-speech-recognition',model,{progress_callback:function(p){
-        if(p&&p.status==='progress'&&typeof p.progress==='number')setAsr('Downloading the speech model: '+Math.round(p.progress)+'%',p.progress);
-      }});
-      asr.model=model;
-    }
+    if(!asr.pipe||asr.model!==model){asr.pipe=await loadAsr(model);asr.model=model;asr.triedCpu=false;}
     stage='run';
-    setAsr('Transcribing. This can take several minutes. Keep this page open.',null);
-    var lang=$('#asrLang').value,opts={chunk_length_s:30,stride_length_s:5,return_timestamps:true};
-    if(lang){opts.language=lang;opts.task='transcribe';}
-    var out=await asr.pipe(audio,opts);
-    var made=chunksToCues(out.chunks||[],audio.length/16000);
-    if(!made.length){setAsr('No speech was found in this video.',null);$('#asrProg').hidden=true;return;}
+    var lang=$('#asrLang').value,base={return_timestamps:true};
+    if(lang){base.language=lang;base.task='transcribe';}
+    var SR=16000,WIN=30*SR,total=audio.length,n=Math.ceil(total/WIN),added=0,t0=Date.now();
+    asr.cancel=false;$('#asrStop').hidden=false;
     pushUndo();
-    made.forEach(function(x){state.cues.push(mk(x.start,Math.max(x.end,x.start+500),x.text));});
-    state.cues=state.cues.map(function(c,i){return {c:c,i:i};}).sort(function(a,b){return a.c.start-b.c.start||a.i-b.i;}).map(function(x){return x.c;});
+    for(var k=0;k<n;k++){
+      if(asr.cancel)break;
+      var off=k*30,slice=audio.slice(k*WIN,Math.min(total,(k+1)*WIN));
+      if(isSilent(slice)){asrStatus(k,n,t0,added);continue;}
+      var out;
+      try{out=await asr.pipe(slice,base);}
+      catch(e){
+        if(asr.mode==='GPU'&&!asr.triedCpu){
+          asr.triedCpu=true;
+          setAsr('The GPU could not run this model. Switching to the CPU...',null);
+          asr.pipe=await loadAsrCpu(model);asr.mode='CPU';
+          out=await asr.pipe(slice,base);
+        }else throw e;
+      }
+      var raw=(out.chunks||[]).map(function(ch){
+        var t=ch.timestamp||[];
+        return {text:ch.text,timestamp:[t[0]!=null?t[0]+off:off,t[1]!=null?t[1]+off:null]};
+      });
+      var made=chunksToCues(raw,Math.min(total/SR,(k+1)*30));
+      made.forEach(function(x){state.cues.push(mk(x.start,Math.max(x.end,x.start+500),x.text));});
+      added+=made.length;
+      state.cues=state.cues.map(function(c,i){return {c:c,i:i};}).sort(function(a,b){return a.c.start-b.c.start||a.i-b.i;}).map(function(x){return x.c;});
+      rerender();
+      asrStatus(k,n,t0,added);
+    }
     $('#asrProg').hidden=true;
-    $('#asrMsg').textContent='Added '+made.length+' cues. Check them in Edit and check, then export and translate.';
-    setTab('edit');
+    if(!added){
+      $('#asrMsg').textContent=asr.cancel?'Stopped before any speech was found.':'No speech was found in this video.';
+    }else{
+      $('#asrMsg').textContent=(asr.cancel?'Stopped. ':'Done. ')+'Added '+added+' cues. Check them in Edit and check, then export and translate.';
+      setTab('edit');
+    }
   }catch(err){
     $('#asrProg').hidden=true;
     var msg=stage==='audio'?'Could not read audio from this file. Try an MP4 with AAC audio, or a shorter clip.'
@@ -1025,7 +1076,7 @@ async function runAsr(){
       :'Transcription stopped: '+((err&&err.message)||'unknown error');
     $('#asrMsg').textContent=msg;toast(msg);
   }finally{
-    asr.busy=false;$('#asrGo').disabled=false;
+    asr.busy=false;$('#asrGo').disabled=false;$('#asrStop').hidden=true;
   }
 }
 function initVideo(){
@@ -1066,6 +1117,7 @@ function initVideo(){
   });
   $('#vSize').addEventListener('change',function(e){document.documentElement.style.setProperty('--vmax',e.target.value+'vh');applyVideoUI();});
   $('#asrGo').addEventListener('click',runAsr);
+  $('#asrStop').addEventListener('click',function(){asr.cancel=true;$('#asrMsg').textContent='Stopping after the current part...';});
   $('#tsLoad').addEventListener('click',tsLoad);
   $('#tsTap').addEventListener('click',tsTap);
   $('#tsEnd').addEventListener('click',tsEnd);
